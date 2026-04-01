@@ -1,4 +1,6 @@
-streamlit==1.32.0
-streamlit-drawable-canvas==0.9.3
-pillow
+flask
+Pillow
 numpy
+opencv-python-headless
+simple-lama-inpainting
+torch --index-url https://download.pytorch.org/whl/cpu
