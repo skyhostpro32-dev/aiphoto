@@ -1,7 +1,9 @@
 streamlit
-Pillow
+pillow
 numpy
+torch
+diffusers
+transformers
+accelerate
 opencv-python-headless
-simple-lama-inpainting
-torch --index-url https://download.pytorch.org/whl/cpu
-torchvision --index-url https://download.pytorch.org/whl/cpu
+segment-anything
