@@ -1,4 +1,7 @@
 streamlit
-pillow
+Pillow
+numpy
+opencv-python-headless
 simple-lama-inpainting
 torch --index-url https://download.pytorch.org/whl/cpu
+torchvision --index-url https://download.pytorch.org/whl/cpu
