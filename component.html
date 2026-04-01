@@ -1,7 +1,8 @@
+html = """
 <!DOCTYPE html>
 <html>
 <head>
-  <script src="https://cdnjs.cloudflare.com/ajax/libs/fabric.js/5.2.4/fabric.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/fabric.js/5.2.4/fabric.min.js"></script>
 </head>
 <body style="margin:0;">
 
@@ -12,7 +13,7 @@ const canvas = new fabric.Canvas('canvas', {
     isDrawingMode: true
 });
 
-canvas.freeDrawingBrush.color = "white";  // mask = white
+canvas.freeDrawingBrush.color = "white";
 canvas.freeDrawingBrush.width = 20;
 
 function loadImage(imgData) {
@@ -23,26 +24,21 @@ function loadImage(imgData) {
     });
 }
 
-// Receive image from Streamlit
 window.addEventListener("message", (event) => {
     if (event.data.type === "load_image") {
         loadImage(event.data.img);
     }
 });
 
-// Send mask back
 function sendMask() {
     const dataURL = canvas.toDataURL({
         format: 'png'
     });
 
-    window.parent.postMessage({
-        type: "mask_data",
-        data: dataURL
-    }, "*");
+    navigator.clipboard.writeText(dataURL);
+    alert("Mask copied! Paste in box.");
 }
 
-// Button UI
 const btn = document.createElement("button");
 btn.innerText = "Apply Mask";
 btn.style.position = "fixed";
@@ -55,3 +51,4 @@ document.body.appendChild(btn);
 
 </body>
 </html>
+"""
