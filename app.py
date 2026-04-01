@@ -1,33 +1,13 @@
 import streamlit as st
-import numpy as np
 from PIL import Image
-import torch
+import numpy as np
 import cv2
+from rembg import remove
+import io
 
-# SAM
-from segment_anything import sam_model_registry, SamPredictor
+st.set_page_config(page_title="AI Object Remover", layout="centered")
 
-# Stable Diffusion Inpainting
-from diffusers import StableDiffusionInpaintPipeline
-
-st.title("🧠 Ultra AI Object Remover (SAM + SD)")
-
-# Load models (cache for speed)
-@st.cache_resource
-def load_models():
-    # SAM model
-    sam = sam_model_registry["vit_b"](checkpoint="sam_vit_b.pth")
-    predictor = SamPredictor(sam)
-
-    # Stable Diffusion Inpainting
-    pipe = StableDiffusionInpaintPipeline.from_pretrained(
-        "runwayml/stable-diffusion-inpainting",
-        torch_dtype=torch.float32
-    )
-
-    return predictor, pipe
-
-predictor, pipe = load_models()
+st.title("🧠 AI Person / Object Remover (Stable)")
 
 uploaded_file = st.file_uploader("Upload Image", type=["png", "jpg", "jpeg"])
 
@@ -35,48 +15,41 @@ if uploaded_file:
     image = Image.open(uploaded_file).convert("RGB")
     img_np = np.array(image)
 
-    st.image(image, caption="Original Image")
+    st.image(image, caption="Original Image", use_column_width=True)
 
-    st.write("👉 Click approximate center of object to remove")
+    if st.button("Remove Person / Object"):
+        with st.spinner("Processing... Please wait"):
 
-    x = st.number_input("X coordinate", 0, img_np.shape[1], 100)
-    y = st.number_input("Y coordinate", 0, img_np.shape[0], 100)
+            # Step 1: Remove background → get mask
+            output = remove(image)
+            output_np = np.array(output)
 
-    if st.button("Remove Object"):
-        with st.spinner("AI working..."):
+            if output_np.shape[2] == 4:
+                alpha = output_np[:, :, 3]
+            else:
+                alpha = cv2.cvtColor(output_np, cv2.COLOR_RGB2GRAY)
 
-            # --- SAM Mask ---
-            predictor.set_image(img_np)
-            input_point = np.array([[x, y]])
-            input_label = np.array([1])
+            # Step 2: Create mask
+            _, mask = cv2.threshold(alpha, 10, 255, cv2.THRESH_BINARY)
 
-            masks, _, _ = predictor.predict(
-                point_coords=input_point,
-                point_labels=input_label,
-                multimask_output=False,
-            )
+            # Step 3: Improve mask (smooth edges)
+            kernel = np.ones((5, 5), np.uint8)
+            mask = cv2.dilate(mask, kernel, iterations=1)
 
-            mask = masks[0].astype(np.uint8) * 255
+            # Step 4: Inpaint (fill removed area)
+            result = cv2.inpaint(img_np, mask, 3, cv2.INPAINT_TELEA)
 
-            # --- Stable Diffusion Inpainting ---
-            mask_pil = Image.fromarray(mask).convert("L")
+            result_img = Image.fromarray(result)
 
-            result = pipe(
-                prompt="clean background",
-                image=image,
-                mask_image=mask_pil
-            ).images[0]
-
-        st.image(result, caption="Removed + AI Filled")
+        st.image(result_img, caption="Result (Person/Object Removed)", use_column_width=True)
 
         # Download
-        import io
         buf = io.BytesIO()
-        result.save(buf, format="PNG")
+        result_img.save(buf, format="PNG")
 
         st.download_button(
-            "Download",
+            "Download Image",
             data=buf.getvalue(),
-            file_name="ai_removed.png",
+            file_name="result.png",
             mime="image/png"
         )
