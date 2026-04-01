@@ -1,61 +1,68 @@
 import streamlit as st
-import numpy as np
 from PIL import Image
-from streamlit_drawable_canvas import st_canvas
+import base64
 import io
 
-st.title("🖌️ Mask Creator Tool")
+st.title("🧠 AI Object Remover (Fabric.js)")
 
 uploaded_file = st.file_uploader("Upload Image", type=["png", "jpg", "jpeg"])
 
 if uploaded_file:
-    image = Image.open(uploaded_file).convert("RGBA")
+    image = Image.open(uploaded_file).convert("RGB")
 
-    st.write("Draw mask on image:")
+    buf = io.BytesIO()
+    image.save(buf, format="PNG")
+    img_base64 = base64.b64encode(buf.getvalue()).decode()
 
-    brush_size = st.slider("Brush Size", 5, 50, 20)
+    img_data = f"data:image/png;base64,{img_base64}"
 
-    canvas = st_canvas(
-        fill_color="rgba(255, 0, 0, 0.4)",
-        stroke_width=brush_size,
-        stroke_color="red",
-        background_image=image,
-        update_streamlit=True,
-        height=image.size[1],
-        width=image.size[0],
-        drawing_mode="freedraw",
-        key="canvas",
-    )
+    html = f"""
+    <!DOCTYPE html>
+    <html>
+    <head>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/fabric.js/5.2.4/fabric.min.js"></script>
+    </head>
+    <body style="margin:0;">
 
-    if canvas.image_data is not None:
+    <canvas id="canvas"></canvas>
 
-        if st.button("Apply Mask"):
+    <script>
+    const canvas = new fabric.Canvas('canvas', {{
+        isDrawingMode: true
+    }});
 
-            mask_data = canvas.image_data
+    canvas.freeDrawingBrush.color = "white";
+    canvas.freeDrawingBrush.width = 20;
 
-            # Extract mask (where user drew)
-            mask = mask_data[:, :, 3]  # alpha channel
+    fabric.Image.fromURL("{img_data}", function(img) {{
+        canvas.setWidth(img.width);
+        canvas.setHeight(img.height);
+        canvas.setBackgroundImage(img, canvas.renderAll.bind(canvas));
+    }});
 
-            mask = (mask > 0).astype(np.uint8) * 255
+    function sendMask() {{
+        const dataURL = canvas.toDataURL("image/png");
+        navigator.clipboard.writeText(dataURL);
+        alert("Mask copied! Paste below.");
+    }}
 
-            # Create transparent masked output
-            img_array = np.array(image)
+    const btn = document.createElement("button");
+    btn.innerText = "Apply Mask";
+    btn.style.position = "fixed";
+    btn.style.bottom = "10px";
+    btn.style.left = "10px";
+    btn.onclick = sendMask;
+    document.body.appendChild(btn);
 
-            # Apply mask (make masked area transparent)
-            img_array[mask == 255] = [255, 0, 0, 0]
+    </script>
 
-            result = Image.fromarray(img_array)
+    </body>
+    </html>
+    """
 
-            st.image(result, caption="Masked Preview", use_column_width=True)
+    st.components.v1.html(html, height=600)
 
-            # Convert to downloadable file
-            buf = io.BytesIO()
-            result.save(buf, format="PNG")
-            byte_im = buf.getvalue()
+    mask_data = st.text_area("Paste Mask Here")
 
-            st.download_button(
-                label="Download Image",
-                data=byte_im,
-                file_name="masked_image.png",
-                mime="image/png"
-            )
+    if st.button("Preview Mask") and mask_data:
+        st.success("Mask received ✅")
