@@ -1,6 +1,4 @@
-flask
-Pillow
-numpy
-opencv-python-headless
+streamlit
+pillow
 simple-lama-inpainting
 torch --index-url https://download.pytorch.org/whl/cpu
