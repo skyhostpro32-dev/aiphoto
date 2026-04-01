@@ -1,69 +1,55 @@
 import streamlit as st
 import numpy as np
 from PIL import Image
-from streamlit_drawable_canvas import st_canvas
 import io
+import requests
 
-st.set_page_config(page_title="Mask Tool", layout="centered")
-
-st.title("🖌️ Image Mask Tool (Stable Version)")
+st.title("🧠 AI Object Remover")
 
 uploaded_file = st.file_uploader("Upload Image", type=["png", "jpg", "jpeg"])
 
 if uploaded_file:
     image = Image.open(uploaded_file).convert("RGB")
-    img_array = np.array(image)
-
     st.image(image, caption="Original Image", use_column_width=True)
 
-    st.write("Draw mask below (same area approx) 👇")
+    st.write("Upload mask (white = remove area)")
 
-    brush_size = st.slider("Brush Size", 5, 50, 20)
+    mask_file = st.file_uploader("Upload Mask Image", type=["png"])
 
-    canvas_size = 400  # fixed safe canvas size
+    if mask_file:
+        mask = Image.open(mask_file).convert("L")
+        st.image(mask, caption="Mask", use_column_width=True)
 
-    canvas = st_canvas(
-        fill_color="rgba(255, 0, 0, 0.4)",
-        stroke_width=brush_size,
-        stroke_color="red",
-        background_color="white",  # ✅ no background_image → no crash
-        height=canvas_size,
-        width=canvas_size,
-        drawing_mode="freedraw",
-        key="canvas",
-    )
+        if st.button("Remove Object"):
 
-    if canvas.image_data is not None:
+            # Convert images to bytes
+            img_bytes = io.BytesIO()
+            image.save(img_bytes, format="PNG")
 
-        if st.button("Apply Mask"):
+            mask_bytes = io.BytesIO()
+            mask.save(mask_bytes, format="PNG")
 
-            # Get mask from canvas
-            mask = canvas.image_data[:, :, 3]
-            mask = (mask > 0).astype(np.uint8) * 255
-
-            # Resize mask to match image
-            mask_img = Image.fromarray(mask).resize((image.width, image.height))
-            mask = np.array(mask_img)
-
-            # Convert image to RGBA
-            img_rgba = image.convert("RGBA")
-            img_rgba = np.array(img_rgba)
-
-            # Apply transparency
-            img_rgba[mask == 255] = [255, 0, 0, 0]
-
-            result = Image.fromarray(img_rgba)
-
-            st.image(result, caption="Masked Result", use_column_width=True)
-
-            # Download
-            buf = io.BytesIO()
-            result.save(buf, format="PNG")
-            byte_im = buf.getvalue()
-
-            st.download_button(
-                label="📥 Download Image",
-                data=byte_im,
-                file_name="masked.png",
-                mime="image/png"
+            # Call LaMa API (example public endpoint)
+            response = requests.post(
+                "https://clipdrop-api.co/cleanup/v1",
+                files={
+                    'image_file': img_bytes.getvalue(),
+                    'mask_file': mask_bytes.getvalue()
+                },
+                headers={
+                    'x-api-key': 'YOUR_API_KEY'
+                }
             )
+
+            if response.status_code == 200:
+                result = Image.open(io.BytesIO(response.content))
+                st.image(result, caption="Result", use_column_width=True)
+
+                st.download_button(
+                    "Download",
+                    data=response.content,
+                    file_name="result.png",
+                    mime="image/png"
+                )
+            else:
+                st.error("Error processing image")
