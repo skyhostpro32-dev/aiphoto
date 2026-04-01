@@ -1,57 +1,70 @@
 <!DOCTYPE html>
 <html>
 <head>
-  <script src="https://cdnjs.cloudflare.com/ajax/libs/fabric.js/5.2.4/fabric.min.js"></script>
+    <title>Magic Eraser</title>
+    <style>
+        #container { position: relative; }
+        canvas { position: absolute; left: 0; top: 0; border: 1px solid #ccc; }
+        .controls { margin-top: 550px; } /* Adjust based on image height */
+    </style>
 </head>
-<body style="margin:0;">
+<body>
+    <input type="file" id="loader">
+    <div id="container">
+        <canvas id="imgCanvas"></canvas>
+        <canvas id="maskCanvas"></canvas>
+    </div>
 
-<canvas id="canvas"></canvas>
+    <div class="controls">
+        <button onclick="sendToAI()">Apply Eraser</button>
+        <button onclick="reset()">Reset</button>
+        <h3>Result:</h3>
+        <img id="output" style="max-width: 500px;">
+    </div>
 
-<script>
-const canvas = new fabric.Canvas('canvas', {
-    isDrawingMode: true
-});
+    <script>
+        const loader = document.getElementById('loader');
+        const imgCanvas = document.getElementById('imgCanvas');
+        const maskCanvas = document.getElementById('maskCanvas');
+        const iCtx = imgCanvas.getContext('2d');
+        const mCtx = maskCanvas.getContext('2d');
+        let painting = false;
 
-canvas.freeDrawingBrush.color = "white";  // mask = white
-canvas.freeDrawingBrush.width = 20;
+        loader.onchange = (e) => {
+            const img = new Image();
+            img.onload = () => {
+                imgCanvas.width = maskCanvas.width = img.width;
+                imgCanvas.height = maskCanvas.height = img.height;
+                iCtx.drawImage(img, 0, 0);
+                // Set mask to transparent/black
+                mCtx.fillStyle = "black";
+                mCtx.fillRect(0,0, maskCanvas.width, maskCanvas.height);
+            };
+            img.src = URL.createObjectURL(e.target.files[0]);
+        };
 
-function loadImage(imgData) {
-    fabric.Image.fromURL(imgData, function(img) {
-        canvas.setWidth(img.width);
-        canvas.setHeight(img.height);
-        canvas.setBackgroundImage(img, canvas.renderAll.bind(canvas));
-    });
-}
+        maskCanvas.onmousedown = () => painting = true;
+        maskCanvas.onmouseup = () => painting = false;
+        maskCanvas.onmousemove = (e) => {
+            if(!painting) return;
+            mCtx.fillStyle = "white"; // "White" tells the AI what to erase
+            mCtx.beginPath();
+            mCtx.arc(e.offsetX, e.offsetY, 20, 0, Math.PI*2);
+            mCtx.fill();
+        };
 
-// Receive image from Streamlit
-window.addEventListener("message", (event) => {
-    if (event.data.type === "load_image") {
-        loadImage(event.data.img);
-    }
-});
-
-// Send mask back
-function sendMask() {
-    const dataURL = canvas.toDataURL({
-        format: 'png'
-    });
-
-    window.parent.postMessage({
-        type: "mask_data",
-        data: dataURL
-    }, "*");
-}
-
-// Button UI
-const btn = document.createElement("button");
-btn.innerText = "Apply Mask";
-btn.style.position = "fixed";
-btn.style.bottom = "10px";
-btn.style.left = "10px";
-btn.onclick = sendMask;
-document.body.appendChild(btn);
-
-</script>
-
+        async function sendToAI() {
+            const response = await fetch('/erase', {
+                method: 'POST',
+                headers: {'Content-Type': 'application/json'},
+                body: JSON.stringify({
+                    image: imgCanvas.toDataURL('image/png'),
+                    mask: maskCanvas.toDataURL('image/png')
+                })
+            });
+            const data = await response.json();
+            document.getElementById('output').src = data.result;
+        }
+    </script>
 </body>
 </html>
