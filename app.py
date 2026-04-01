@@ -1,36 +1,33 @@
-import io
-import base64
-from flask import Flask, render_template, request, jsonify
+import streamlit as st
 from PIL import Image
-import numpy as np
 from simple_lama_inpainting import SimpleLama
+import numpy as np
 
-app = Flask(__name__)
-model = SimpleLama()
+# Initialize the model
+@st.cache_resource
+def load_model():
+    return SimpleLama()
 
-@app.route('/')
-def home():
-    return render_template('index.html')
+lama = load_model()
 
-@app.route('/erase', methods=['POST'])
-def erase():
-    data = request.json
-    # Decode the base64 image and mask
-    image_data = base64.b64decode(data['image'].split(',')[1])
-    mask_data = base64.b64decode(data['mask'].split(',')[1])
+st.title("AI Spot Eraser")
 
-    img = Image.open(io.BytesIO(image_data)).convert("RGB")
-    mask = Image.open(io.BytesIO(mask_data)).convert("L")
+uploaded_file = st.file_uploader("Upload an image", type=["jpg", "png", "jpeg"])
 
-    # The AI magic happens here
-    result = model(img, mask)
-
-    # Convert back to base64 to send to frontend
-    buffered = io.BytesIO()
-    result.save(buffered, format="PNG")
-    encoded_res = base64.b64encode(buffered.getvalue()).decode('utf-8')
+if uploaded_file:
+    img = Image.open(uploaded_file).convert("RGB")
+    st.image(img, caption="Original Image", use_container_width=True)
     
-    return jsonify({'result': 'data:image/png;base64,' + encoded_res})
-
-if __name__ == '__main__':
-    app.run(port=5000)
+    # In a real app, you'd use a canvas component here. 
+    # For a quick test, we can use a placeholder or logic to apply a mask.
+    if st.button("Apply Mask & Erase"):
+        # Note: For a true "draw-on-image" experience in Streamlit, 
+        # you would need the 'streamlit-drawable-canvas' library.
+        st.write("Processing...")
+        
+        # Dummy mask for demonstration (usually you'd get this from a canvas)
+        mask = Image.new("L", img.size, 0) 
+        
+        # Run Inpainting
+        result = lama(img, mask)
+        st.image(result, caption="Natural Image", use_container_width=True)
