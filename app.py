@@ -1,78 +1,61 @@
 import streamlit as st
-import streamlit.components.v1 as components
-from PIL import Image
 import numpy as np
-import base64
+from PIL import Image
+from streamlit_drawable_canvas import st_canvas
 import io
-import requests
 
-st.title("🧠 AI Object Remover (Fabric.js)")
+st.title("🖌️ Mask Creator Tool")
 
 uploaded_file = st.file_uploader("Upload Image", type=["png", "jpg", "jpeg"])
 
 if uploaded_file:
-    image = Image.open(uploaded_file).convert("RGB")
+    image = Image.open(uploaded_file).convert("RGBA")
 
-    # Convert image → base64
-    buf = io.BytesIO()
-    image.save(buf, format="PNG")
-    img_base64 = base64.b64encode(buf.getvalue()).decode()
+    st.write("Draw mask on image:")
 
-    img_data = f"data:image/png;base64,{img_base64}"
+    brush_size = st.slider("Brush Size", 5, 50, 20)
 
-    # Load HTML component
-    with open("component.html", "r") as f:
-        html = f.read()
+    canvas = st_canvas(
+        fill_color="rgba(255, 0, 0, 0.4)",
+        stroke_width=brush_size,
+        stroke_color="red",
+        background_image=image,
+        update_streamlit=True,
+        height=image.size[1],
+        width=image.size[0],
+        drawing_mode="freedraw",
+        key="canvas",
+    )
 
-    # Inject script to send image
-    html += f"""
-    <script>
-    window.onload = function() {{
-        window.postMessage({{
-            type: "load_image",
-            img: "{img_data}"
-        }}, "*");
-    }};
-    </script>
-    """
+    if canvas.image_data is not None:
 
-    # Capture mask
-    mask_data = components.html(html, height=600)
+        if st.button("Apply Mask"):
 
-    st.info("Draw on image → Click 'Apply Mask'")
+            mask_data = canvas.image_data
 
-    # NOTE: Streamlit doesn't auto-capture postMessage directly
-    # So we simulate via text input (simple workaround)
-    mask_input = st.text_area("Paste mask data here (auto next version)")
+            # Extract mask (where user drew)
+            mask = mask_data[:, :, 3]  # alpha channel
 
-    if st.button("Remove Object") and mask_input:
+            mask = (mask > 0).astype(np.uint8) * 255
 
-        # Decode mask
-        header, encoded = mask_input.split(",", 1)
-        mask_bytes = base64.b64decode(encoded)
+            # Create transparent masked output
+            img_array = np.array(image)
 
-        # Call AI API (ClipDrop)
-        response = requests.post(
-            "https://clipdrop-api.co/cleanup/v1",
-            files={
-                'image_file': buf.getvalue(),
-                'mask_file': mask_bytes
-            },
-            headers={
-                'x-api-key': 'YOUR_API_KEY'
-            }
-        )
+            # Apply mask (make masked area transparent)
+            img_array[mask == 255] = [255, 0, 0, 0]
 
-        if response.status_code == 200:
-            result = Image.open(io.BytesIO(response.content))
+            result = Image.fromarray(img_array)
 
-            st.image(result, caption="Result", use_column_width=True)
+            st.image(result, caption="Masked Preview", use_column_width=True)
+
+            # Convert to downloadable file
+            buf = io.BytesIO()
+            result.save(buf, format="PNG")
+            byte_im = buf.getvalue()
 
             st.download_button(
-                "Download",
-                data=response.content,
-                file_name="result.png",
+                label="Download Image",
+                data=byte_im,
+                file_name="masked_image.png",
                 mime="image/png"
             )
-        else:
-            st.error("API Error")
