@@ -1,31 +1,82 @@
 import streamlit as st
-from PIL import Image
-from simple_lama_inpainting import SimpleLama
 import numpy as np
+from PIL import Image
+import torch
+import cv2
 
-# This loads the model only once to save memory
+# SAM
+from segment_anything import sam_model_registry, SamPredictor
+
+# Stable Diffusion Inpainting
+from diffusers import StableDiffusionInpaintPipeline
+
+st.title("🧠 Ultra AI Object Remover (SAM + SD)")
+
+# Load models (cache for speed)
 @st.cache_resource
-def load_model():
-    return SimpleLama()
+def load_models():
+    # SAM model
+    sam = sam_model_registry["vit_b"](checkpoint="sam_vit_b.pth")
+    predictor = SamPredictor(sam)
 
-st.title("✨ AI Spot Eraser")
-st.write("Upload an image to remove spots or objects.")
+    # Stable Diffusion Inpainting
+    pipe = StableDiffusionInpaintPipeline.from_pretrained(
+        "runwayml/stable-diffusion-inpainting",
+        torch_dtype=torch.float32
+    )
 
-uploaded_file = st.file_uploader("Choose an image...", type=["jpg", "jpeg", "png"])
+    return predictor, pipe
+
+predictor, pipe = load_models()
+
+uploaded_file = st.file_uploader("Upload Image", type=["png", "jpg", "jpeg"])
 
 if uploaded_file:
-    img = Image.open(uploaded_file).convert("RGB")
-    st.image(img, caption="Original Image", use_container_width=True)
-    
-    # Simple trigger for the "Natural Image" result
-    if st.button("Apply Mask & Erase"):
-        with st.spinner("Processing..."):
-            lama = load_model()
-            
-            # For a quick test, we'll create a dummy mask.
-            # In a full app, you'd use 'streamlit-drawable-canvas' to draw the mask.
-            mask = Image.new("L", img.size, 0) 
-            
-            result = lama(img, mask)
-            st.image(result, caption="Resulting Image", use_container_width=True)
-            st.success("Done!")
+    image = Image.open(uploaded_file).convert("RGB")
+    img_np = np.array(image)
+
+    st.image(image, caption="Original Image")
+
+    st.write("👉 Click approximate center of object to remove")
+
+    x = st.number_input("X coordinate", 0, img_np.shape[1], 100)
+    y = st.number_input("Y coordinate", 0, img_np.shape[0], 100)
+
+    if st.button("Remove Object"):
+        with st.spinner("AI working..."):
+
+            # --- SAM Mask ---
+            predictor.set_image(img_np)
+            input_point = np.array([[x, y]])
+            input_label = np.array([1])
+
+            masks, _, _ = predictor.predict(
+                point_coords=input_point,
+                point_labels=input_label,
+                multimask_output=False,
+            )
+
+            mask = masks[0].astype(np.uint8) * 255
+
+            # --- Stable Diffusion Inpainting ---
+            mask_pil = Image.fromarray(mask).convert("L")
+
+            result = pipe(
+                prompt="clean background",
+                image=image,
+                mask_image=mask_pil
+            ).images[0]
+
+        st.image(result, caption="Removed + AI Filled")
+
+        # Download
+        import io
+        buf = io.BytesIO()
+        result.save(buf, format="PNG")
+
+        st.download_button(
+            "Download",
+            data=buf.getvalue(),
+            file_name="ai_removed.png",
+            mime="image/png"
+        )
